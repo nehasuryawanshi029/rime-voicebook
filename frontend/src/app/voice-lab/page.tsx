@@ -25,7 +25,7 @@ export default function VoiceLabPage() {
 
   const fetchLiveMetrics = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/metrics');
+      const res = await fetch('https://rime-voicebook-backend.onrender.com/api/metrics');
       if (res.ok) {
         const data = await res.json();
         setRawMetrics(data);

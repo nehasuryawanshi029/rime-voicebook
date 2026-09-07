@@ -133,7 +133,7 @@ python -m venv venv
 pip install -r requirements.txt
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-The backend starts at `http://localhost:8000`. The SQLite flight database is automatically seeded on startup.
+The backend starts at `https://rime-voicebook-backend.onrender.com`. The SQLite flight database is automatically seeded on startup.
 
 ### 2. Start Frontend
 ```powershell
