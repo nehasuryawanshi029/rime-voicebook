@@ -1,0 +1,28 @@
+{
+  "test": "deterministic_interruption_test",
+  "timestamp": "2026-09-07T16:10:54.023513+00:00",
+  "search_delay_seconds": 4.0,
+  "checks": {
+    "1_interruption_detected": true,
+    "2_gen1_obsolete": true,
+    "3_gen2_created": true,
+    "4_mumbai_origin": true,
+    "5_delhi_destination": true,
+    "6_stale_results_discarded": true,
+    "7_stale_results_spoken_zero": true,
+    "8_authoritative_flights_mumbai": true
+  },
+  "overall_passed": true,
+  "current_generation": 2,
+  "stale_results_discarded": 1,
+  "stale_results_spoken": 0,
+  "final_constraints": {
+    "origin": "Mumbai",
+    "destination": "Delhi",
+    "date": "tomorrow",
+    "budget": null,
+    "passengers": 1,
+    "selected_flight": null
+  },
+  "timeline_length": 24
+}
