@@ -8,10 +8,12 @@ interface ConversationProps {
 }
 
 export const Conversation: React.FC<ConversationProps> = ({ messages, liveTranscript }) => {
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
   }, [messages, liveTranscript]);
 
   return (
@@ -26,7 +28,7 @@ export const Conversation: React.FC<ConversationProps> = ({ messages, liveTransc
         </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+      <div ref={containerRef} className="flex-1 overflow-y-auto space-y-4 pr-1">
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
             <Bot className="w-10 h-10 mb-2 opacity-40 text-violet-400" />
@@ -93,8 +95,6 @@ export const Conversation: React.FC<ConversationProps> = ({ messages, liveTransc
             </div>
           </div>
         )}
-
-        <div ref={bottomRef} />
       </div>
     </div>
   );

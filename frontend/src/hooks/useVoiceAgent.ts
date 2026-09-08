@@ -52,6 +52,7 @@ export function useVoiceAgent() {
   const voiceStateRef = useRef<VoiceState>('IDLE');
   const reconnectTimerRef = useRef<any>(null);
   const reconnectAttemptsRef = useRef<number>(0);
+  const isListeningRef = useRef<boolean>(false);
 
   // Keep refs synchronized
   useEffect(() => {
@@ -61,6 +62,10 @@ export function useVoiceAgent() {
   useEffect(() => {
     voiceStateRef.current = voiceState;
   }, [voiceState]);
+
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
 
 
   // Initialize AudioContext
@@ -426,8 +431,32 @@ export function useVoiceAgent() {
         }
       };
 
+      recognition.onspeechstart = () => {
+        if (voiceStateRef.current === 'IDLE' || voiceStateRef.current === 'COMPLETED') {
+          setVoiceState('LISTENING');
+        }
+      };
+
+      recognition.onspeechend = () => {
+        if (voiceStateRef.current === 'LISTENING') {
+          setVoiceState('IDLE');
+        }
+      };
+
       recognition.onerror = (e: any) => {
-        console.warn('Speech recognition event:', e.error);
+        if (e.error === 'no-speech') {
+          // ignore no-speech errors, it will restart on end
+        } else {
+          console.warn('Speech recognition event:', e.error);
+        }
+      };
+
+      recognition.onend = () => {
+        if (isListeningRef.current) {
+          try {
+            recognition.start();
+          } catch {}
+        }
       };
 
       recognitionRef.current = recognition;
@@ -440,10 +469,10 @@ export function useVoiceAgent() {
       try {
         recognitionRef.current?.start();
         setIsListening(true);
-        setVoiceState('LISTENING');
+        setVoiceState('IDLE');
       } catch {
         setIsListening(true);
-        setVoiceState('LISTENING');
+        setVoiceState('IDLE');
       }
     } else {
       try {

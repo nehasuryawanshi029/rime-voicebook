@@ -61,6 +61,16 @@ function AssistantContent() {
     if (autoDemo && !isDemoRunning && demoStep === 0) {
       runInterruptionDemo();
     }
+  }, [autoDemo, isDemoRunning, demoStep]);
+
+  // Auth check
+  useEffect(() => {
+    if (!autoDemo && typeof window !== 'undefined') {
+      const isAuth = localStorage.getItem('voicebook_auth') === 'true';
+      if (!isAuth) {
+        window.location.href = '/login';
+      }
+    }
   }, [autoDemo]);
 
   const handleTextSubmit = (e: React.FormEvent) => {
