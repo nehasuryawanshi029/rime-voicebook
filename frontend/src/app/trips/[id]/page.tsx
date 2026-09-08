@@ -29,7 +29,7 @@ export default function TripDetailPage() {
   useEffect(() => {
     const fetchTrip = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/bookings/${id}`);
+        const res = await fetch(`https://rime-voicebook-backend.onrender.com/api/bookings/${id}`);
         if (res.ok) {
           const data = await res.json();
           setBooking(data.booking);

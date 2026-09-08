@@ -73,7 +73,7 @@ export default function EvaluationPage() {
 
     try {
       // Execute live simulated utterance via backend
-      const res = await fetch('http://localhost:8000/api/simulate/utterance', {
+      const res = await fetch('https://rime-voicebook-backend.onrender.com/api/simulate/utterance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -85,7 +85,7 @@ export default function EvaluationPage() {
       const elapsed = (performance.now() - startTime).toFixed(1);
 
       // Fetch live snapshot
-      const metricsRes = await fetch('http://localhost:8000/api/metrics');
+      const metricsRes = await fetch('https://rime-voicebook-backend.onrender.com/api/metrics');
       if (metricsRes.ok) {
         const snap = await metricsRes.json();
         setRealTestMetrics({

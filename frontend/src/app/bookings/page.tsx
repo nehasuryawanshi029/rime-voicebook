@@ -14,7 +14,7 @@ export default function BookingsPage() {
   const fetchBookings = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/bookings');
+      const res = await fetch('https://rime-voicebook-backend.onrender.com/api/bookings');
       if (res.ok) {
         const data = await res.json();
         setBookings(data.bookings || []);
@@ -33,7 +33,7 @@ export default function BookingsPage() {
   const handleCancel = async (bookingId: string) => {
     if (!confirm(`Are you sure you want to cancel booking ${bookingId}?`)) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/bookings/${bookingId}/cancel`, {
+      const res = await fetch(`https://rime-voicebook-backend.onrender.com/api/bookings/${bookingId}/cancel`, {
         method: 'POST',
       });
       if (res.ok) {

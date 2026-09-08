@@ -26,7 +26,7 @@ export default function SearchPage() {
       if (destination.trim()) params.append('destination', destination.trim());
       if (budget.trim() && Number(budget) > 0) params.append('budget', budget.trim());
 
-      const res = await fetch(`http://localhost:8000/api/flights?${params.toString()}`);
+      const res = await fetch(`https://rime-voicebook-backend.onrender.com/api/flights?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         let list = data.flights || [];
