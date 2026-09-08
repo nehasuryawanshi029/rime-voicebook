@@ -166,9 +166,7 @@ export function useVoiceAgent() {
     const connectWebSocket = () => {
       if (unmounted) return;
 
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.hostname || 'localhost';
-      const wsUrl = `${protocol}//${host}:8000/ws/voice/${currentSessionId}`;
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//rime-voicebook-backend.onrender.com/ws/voice/${currentSessionId}`;
 
       setConnectionStatus((prev) => (reconnectAttemptsRef.current > 0 ? 'RECONNECTING' : 'CONNECTING'));
 
