@@ -56,6 +56,7 @@ export function useVoiceAgent() {
   const reconnectTimerRef = useRef<any>(null);
   const reconnectAttemptsRef = useRef<number>(0);
   const languageRef = useRef<string>('en');
+  const isListeningRef = useRef<boolean>(false);
 
   // Keep refs synchronized
   useEffect(() => {
@@ -111,6 +112,14 @@ export function useVoiceAgent() {
 
       try {
         const ctx = getAudioContext();
+        if (ctx.state === 'suspended') {
+          try {
+            await ctx.resume();
+          } catch (resumeErr) {
+            console.warn('AudioContext resume warning:', resumeErr);
+          }
+        }
+
         const binaryString = window.atob(base64Audio);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
@@ -491,6 +500,9 @@ export function useVoiceAgent() {
     (text: string) => {
       if (!text.trim()) return;
 
+      // Unlock AudioContext immediately during user interaction
+      getAudioContext();
+
       // If AI is currently speaking or searching, barge in immediately
       if (voiceStateRef.current === 'SPEAKING' || voiceStateRef.current === 'SEARCHING') {
         triggerInterruption('user_voice_barge_in');
@@ -501,7 +513,7 @@ export function useVoiceAgent() {
         transcript: text.trim(),
       });
     },
-    [triggerInterruption, safeSend]
+    [triggerInterruption, safeSend, getAudioContext]
   );
 
   // Initialize Browser Web Speech API for voice input
@@ -549,6 +561,29 @@ export function useVoiceAgent() {
 
       recognition.onerror = (e: any) => {
         console.warn('Speech recognition event:', e.error);
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          isListeningRef.current = false;
+          setIsListening(false);
+          setVoiceState('IDLE');
+        }
+      };
+
+      recognition.onend = () => {
+        // In Chrome, SpeechRecognition automatically stops on silence or speech pause.
+        // If the user hasn't explicitly clicked mic to stop, restart recognition automatically:
+        if (isListeningRef.current) {
+          try {
+            recognition.start();
+          } catch {
+            setTimeout(() => {
+              if (isListeningRef.current) {
+                try {
+                  recognition.start();
+                } catch {}
+              }
+            }, 300);
+          }
+        }
       };
 
       recognitionRef.current = recognition;
@@ -557,23 +592,24 @@ export function useVoiceAgent() {
 
   const toggleListening = useCallback(() => {
     getAudioContext();
-    if (!isListening) {
+    if (!isListeningRef.current) {
+      isListeningRef.current = true;
+      setIsListening(true);
+      setVoiceState('LISTENING');
       try {
         recognitionRef.current?.start();
-        setIsListening(true);
-        setVoiceState('LISTENING');
-      } catch {
-        setIsListening(true);
-        setVoiceState('LISTENING');
+      } catch (err) {
+        console.warn('Speech recognition start error:', err);
       }
     } else {
+      isListeningRef.current = false;
+      setIsListening(false);
+      setVoiceState('IDLE');
       try {
         recognitionRef.current?.stop();
       } catch {}
-      setIsListening(false);
-      setVoiceState('IDLE');
     }
-  }, [isListening, getAudioContext]);
+  }, [getAudioContext]);
 
   const selectFlight = useCallback(
     (flight: Flight) => {

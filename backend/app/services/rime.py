@@ -119,7 +119,8 @@ class RimeTTSService:
                 "speaker": effective_speaker,
                 "modelId": effective_model,
                 "lang": effective_lang,
-                "samplingRate": 24000
+                "samplingRate": 24000,
+                "audioFormat": "pcm"
             }
 
             timeout = aiohttp.ClientTimeout(total=20, connect=5)
