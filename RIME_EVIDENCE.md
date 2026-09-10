@@ -44,8 +44,8 @@ The Rime integration is implemented in [`backend/app/services/rime.py`](file:///
 | Configuration Key | Value | Environment Variable | Rationale |
 | :--- | :--- | :--- | :--- |
 | **API Endpoint** | `https://users.rime.ai/v1/rime-tts` | — | Official Rime REST / Streaming endpoint |
-| **Model** | `mist` | `RIME_MODEL` | Ultra-low latency conversational model |
-| **Speaker** | `mist` | `RIME_SPEAKER` | Natural, high-clarity conversational voice |
+| **Model** | `mistv3` | `RIME_MODEL` | Optimized model for conversational latency |
+| **Speaker** | `marsh` | `RIME_SPEAKER` | Live speaker validation passed |
 | **Language** | `en` | `RIME_LANGUAGE` | Standard English |
 | **Audio Format** | `mp3` / `pcm` | — | Low-bandwidth chunk delivery |
 | **Sample Rate** | `24,000 Hz` | — | High-fidelity conversational audio |
@@ -96,6 +96,7 @@ Measured via live backend telemetry (`backend/app/services/metrics.py` and `/api
 | **Stale Results Discarded** | `count` | Total obsolete tool results intercepted and prevented from updating state. |
 | **Stale Results Spoken** | **`0`** | Must always remain strictly zero under generation fencing. |
 
+
 ## Limitations
 
 - Speech quality can vary depending on the selected speaker, language, and input text.
@@ -103,3 +104,6 @@ Measured via live backend telemetry (`backend/app/services/metrics.py` and `/api
 - Network connectivity is required because speech generation depends on the Rime API.
 - Temporary API/network failures can prevent audio generation or cause delayed responses.
 - Pronunciation of uncommon names, technical terms, abbreviations, or mixed-language text may not always be perfect.
+- The system currently supports the configured Rime language/speaker combinations and does not automatically provide every language or voice.
+- Under heavy usage, response latency may increase due to external API availability or rate limits.
+- The demonstrated stress/failure handling improves reliability, but it does not guarantee successful speech generation for every possible input.

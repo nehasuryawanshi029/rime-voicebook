@@ -42,8 +42,7 @@ export const Footer: React.FC = () => {
           <div className="flex flex-wrap gap-1.5 text-[11px]">
             <span className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-slate-300">Rime TTS</span>
             <span className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-slate-300">Google Gemini</span>
-            <span className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-slate-300">Deepgram</span>
-            <span className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-slate-300">LiveKit</span>
+            <span className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-slate-300">Web Speech API</span>
             <span className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-slate-300">FastAPI</span>
             <span className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-slate-300">Next.js</span>
           </div>

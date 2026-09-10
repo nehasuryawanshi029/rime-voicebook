@@ -1,6 +1,6 @@
 {
   "test": "deterministic_interruption_test",
-  "timestamp": "2026-09-07T16:10:54.023513+00:00",
+  "timestamp": "2026-09-09T23:48:44.116361+00:00",
   "search_delay_seconds": 4.0,
   "checks": {
     "1_interruption_detected": true,
@@ -10,9 +10,9 @@
     "5_delhi_destination": true,
     "6_stale_results_discarded": true,
     "7_stale_results_spoken_zero": true,
-    "8_authoritative_flights_mumbai": true
+    "8_authoritative_flights_mumbai": false
   },
-  "overall_passed": true,
+  "overall_passed": false,
   "current_generation": 2,
   "stale_results_discarded": 1,
   "stale_results_spoken": 0,
@@ -22,7 +22,8 @@
     "date": "tomorrow",
     "budget": null,
     "passengers": 1,
-    "selected_flight": null
+    "selected_flight": null,
+    "booking_id": null
   },
-  "timeline_length": 24
+  "timeline_length": 33
 }

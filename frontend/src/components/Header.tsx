@@ -66,17 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Gemini {services.gemini === 'CONNECTED' ? 'Connected' : 'Ready'}</span>
           </div>
 
-          {/* Deepgram Status */}
-          <div className="hidden sm:flex items-center px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">
-            {getDot(services.deepgram)}
-            <span>Deepgram {services.deepgram === 'CONNECTED' ? 'Connected' : 'Ready'}</span>
-          </div>
 
-          {/* LiveKit Status */}
-          <div className="hidden sm:flex items-center px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">
-            {getDot(services.livekit)}
-            <span>LiveKit {services.livekit === 'CONFIGURED' ? 'Connected' : 'Ready'}</span>
-          </div>
 
           {/* Demo Mode Toggle */}
           <button

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { BookingRecord } from '@/types';
+import { getApiBaseUrl } from '@/lib/api';
 import {
   Plane,
   Calendar,
@@ -29,7 +30,8 @@ export default function TripDetailPage() {
   useEffect(() => {
     const fetchTrip = async () => {
       try {
-        const res = await fetch(`https://rime-voicebook-backend.onrender.com/api/bookings/${id}`);
+        const apiUrl = getApiBaseUrl();
+        const res = await fetch(`${apiUrl}/api/bookings/${id}`);
         if (res.ok) {
           const data = await res.json();
           setBooking(data.booking);

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { VoiceOrb } from '@/components/VoiceOrb';
@@ -9,6 +10,7 @@ import { Waveform } from '@/components/Waveform';
 import { Conversation } from '@/components/Conversation';
 import { FlightCard } from '@/components/FlightCard';
 import { BookingModal } from '@/components/BookingModal';
+import { BudgetControl } from '@/components/BudgetControl';
 import { useVoiceAgent } from '@/hooks/useVoiceAgent';
 import { Flight } from '@/types';
 import {
@@ -19,15 +21,24 @@ import {
   IndianRupee,
   Users,
   Clock,
-  Zap,
   RotateCcw,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Globe,
 } from 'lucide-react';
 
 function AssistantContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const autoDemo = searchParams.get('demo') === 'true';
+  const { user, isGuest, isAuthenticated, isLoading: authLoading } = useAuth();
+
+  // Route protection: redirect to /login if not authenticated and not guest
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated && !isGuest) {
+      router.push('/login');
+    }
+  }, [authLoading, isAuthenticated, isGuest, router]);
 
   const {
     sessionId,
@@ -37,6 +48,7 @@ function AssistantContent() {
     messages,
     liveTranscript,
     demoMode,
+    language,
     constraints,
     flights,
     metrics,
@@ -48,6 +60,8 @@ function AssistantContent() {
     sendSpeechTranscript,
     selectFlight,
     bookFlight,
+    updateBudget,
+    setLanguage,
   } = useVoiceAgent();
 
   const [inputVal, setInputVal] = useState('');
@@ -60,16 +74,6 @@ function AssistantContent() {
   useEffect(() => {
     if (autoDemo && !isDemoRunning && demoStep === 0) {
       runInterruptionDemo();
-    }
-  }, [autoDemo, isDemoRunning, demoStep]);
-
-  // Auth check
-  useEffect(() => {
-    if (!autoDemo && typeof window !== 'undefined') {
-      const isAuth = localStorage.getItem('voicebook_auth') === 'true';
-      if (!isAuth) {
-        window.location.href = '/login';
-      }
     }
   }, [autoDemo]);
 
@@ -126,6 +130,17 @@ function AssistantContent() {
     setIsDemoRunning(false);
   };
 
+  if (authLoading || (!isAuthenticated && !isGuest)) {
+    return (
+      <div className="min-h-screen bg-[#070b14] flex items-center justify-center text-slate-400 text-xs">
+        <div className="space-y-3 text-center">
+          <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p>Verifying VoiceBook session...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-[#070b14] text-slate-100 selection:bg-violet-600">
       <Navbar
@@ -133,40 +148,19 @@ function AssistantContent() {
         currentGen={currentGen}
         demoMode={demoMode}
         onToggleDemoMode={toggleDemoMode}
+        onRunDemo={runInterruptionDemo}
+        isDemoRunning={isDemoRunning}
+        demoStep={demoStep}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Top Control & Demo Banner */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-md">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-violet-400">
-              <Zap className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-white">VoiceBook Assistant</h2>
-              <p className="text-xs text-slate-400">
-                Session: <span className="font-mono text-violet-300">{sessionId || 'initializing...'}</span> &bull; Gen: <span className="font-mono text-cyan-300">{currentGen}</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-3">
-            {/* Real Interruption Demo Trigger */}
-            <button
-              onClick={runInterruptionDemo}
-              disabled={isDemoRunning}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all shadow-md ${
-                isDemoRunning
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
-                  : 'bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-white shadow-rose-500/20'
-              }`}
-            >
-              <Zap className="w-4 h-4" />
-              <span>{isDemoRunning ? `Running Demo (Step ${demoStep}/3)...` : 'RUN INTERRUPTION DEMO'}</span>
-            </button>
-          </div>
+      {isGuest && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-center text-xs text-amber-300 font-medium flex items-center justify-center space-x-2">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+          <span>Guest Mode Active — Session data and bookings are temporary. To save bookings permanently, please log in.</span>
         </div>
+      )}
 
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* 3-Column Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* LEFT: HERO VOICE INTERFACE (4 cols) */}
@@ -183,36 +177,131 @@ function AssistantContent() {
               {/* Waveform visualizer */}
               <Waveform voiceState={voiceState} isActive={isListening} />
 
+              {/* Language Picker */}
+              <div className="w-full pt-4 border-t border-slate-800/80 space-y-2">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
+                  <Globe className="w-3 h-3" />
+                  <span>Language</span>
+                </span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { code: 'en', label: 'English', flag: '🇬🇧' },
+                    { code: 'hi', label: 'हिन्दी', flag: '🇮🇳', sublabel: 'Rime' },
+                    { code: 'mr', label: 'मराठी', flag: '🇮🇳', sublabel: 'Browser' },
+                  ].map((lang) => (
+                    <button
+                      key={lang.code}
+                      onClick={() => setLanguage(lang.code)}
+                      className={`flex flex-col items-center px-2 py-2 rounded-lg text-xs font-medium transition-all ${
+                        language === lang.code
+                          ? 'bg-violet-600/20 text-violet-300 border border-violet-500/40 shadow-sm shadow-violet-500/10'
+                          : 'bg-slate-950/70 text-slate-400 border border-slate-800/60 hover:bg-slate-800 hover:text-slate-300'
+                      }`}
+                    >
+                      <span className="text-sm">{lang.flag}</span>
+                      <span className="mt-0.5">{lang.label}</span>
+                      {lang.sublabel && (
+                        <span className={`text-[9px] mt-0.5 ${
+                          language === lang.code ? 'text-violet-400/70' : 'text-slate-500'
+                        }`}>
+                          {lang.sublabel} TTS
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Quick Prompt Suggestions */}
               <div className="w-full pt-4 border-t border-slate-800/80 space-y-2">
                 <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block">
                   Try Saying:
                 </span>
                 <div className="space-y-1.5 text-xs">
-                  <button
-                    onClick={() => sendSpeechTranscript('Find me a flight from Pune to Delhi tomorrow.')}
-                    className="w-full text-left px-3 py-2 rounded-lg bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800/60 transition-colors"
-                  >
-                    &ldquo;Pune to Delhi tomorrow&rdquo;
-                  </button>
-                  <button
-                    onClick={() => sendSpeechTranscript('Under five thousand rupees.')}
-                    className="w-full text-left px-3 py-2 rounded-lg bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800/60 transition-colors"
-                  >
-                    &ldquo;Under five thousand rupees&rdquo;
-                  </button>
-                  <button
-                    onClick={() => sendSpeechTranscript('Wait — actually from Mumbai.')}
-                    className="w-full text-left px-3 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-colors"
-                  >
-                    ⚡ &ldquo;Wait — actually from Mumbai&rdquo;
-                  </button>
-                  <button
-                    onClick={() => sendSpeechTranscript('Book the cheapest one.')}
-                    className="w-full text-left px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-colors"
-                  >
-                    &ldquo;Book the cheapest one&rdquo;
-                  </button>
+                  {language === 'en' && (
+                    <>
+                      <button
+                        onClick={() => sendSpeechTranscript('Find me a flight from Pune to Delhi tomorrow.')}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800/60 transition-colors"
+                      >
+                        &ldquo;Pune to Delhi tomorrow&rdquo;
+                      </button>
+                      <button
+                        onClick={() => sendSpeechTranscript('Under five thousand rupees.')}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800/60 transition-colors"
+                      >
+                        &ldquo;Under five thousand rupees&rdquo;
+                      </button>
+                      <button
+                        onClick={() => sendSpeechTranscript('Wait — actually from Mumbai.')}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-colors"
+                      >
+                        ⚡ &ldquo;Wait — actually from Mumbai&rdquo;
+                      </button>
+                      <button
+                        onClick={() => sendSpeechTranscript('Book the cheapest one.')}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-colors"
+                      >
+                        &ldquo;Book the cheapest one&rdquo;
+                      </button>
+                    </>
+                  )}
+                  {language === 'hi' && (
+                    <>
+                      <button
+                        onClick={() => sendSpeechTranscript('मुझे पुणे से दिल्ली की फ्लाइट चाहिए कल के लिए।')}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800/60 transition-colors"
+                      >
+                        &ldquo;पुणे से दिल्ली कल&rdquo;
+                      </button>
+                      <button
+                        onClick={() => sendSpeechTranscript('पांच हजार से कम बजट में।')}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800/60 transition-colors"
+                      >
+                        &ldquo;पांच हजार से कम&rdquo;
+                      </button>
+                      <button
+                        onClick={() => sendSpeechTranscript('रुको — मुंबई से चाहिए।')}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-colors"
+                      >
+                        ⚡ &ldquo;रुको — मुंबई से चाहिए&rdquo;
+                      </button>
+                      <button
+                        onClick={() => sendSpeechTranscript('सबसे सस्ती वाली बुक करो।')}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-colors"
+                      >
+                        &ldquo;सबसे सस्ती बुक करो&rdquo;
+                      </button>
+                    </>
+                  )}
+                  {language === 'mr' && (
+                    <>
+                      <button
+                        onClick={() => sendSpeechTranscript('मला पुणे ते दिल्ली फ्लाइट हवी आहे उद्याची।')}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800/60 transition-colors"
+                      >
+                        &ldquo;पुणे ते दिल्ली उद्या&rdquo;
+                      </button>
+                      <button
+                        onClick={() => sendSpeechTranscript('पाच हजार रुपयांच्या आत।')}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800/60 transition-colors"
+                      >
+                        &ldquo;पाच हजारांच्या आत&rdquo;
+                      </button>
+                      <button
+                        onClick={() => sendSpeechTranscript('थांबा — मुंबई हून हवे।')}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-colors"
+                      >
+                        ⚡ &ldquo;थांबा — मुंबई हून हवे&rdquo;
+                      </button>
+                      <button
+                        onClick={() => sendSpeechTranscript('सर्वात स्वस्त बुक करा।')}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-colors"
+                      >
+                        &ldquo;सर्वात स्वस्त बुक करा&rdquo;
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -247,12 +336,15 @@ function AssistantContent() {
                 </div>
               </div>
             </div>
+
+            {/* Budget Control */}
+            <BudgetControl currentBudget={constraints.budget || null} onUpdateBudget={updateBudget} />
           </div>
 
           {/* CENTER: CONVERSATION STREAM (4 cols) */}
           <div className="lg:col-span-4 space-y-4">
             <div className="flex flex-col h-[580px] bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 backdrop-blur-sm">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3 shrink-0">
                 <h3 className="text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold">
                   Live Conversation
                 </h3>
@@ -262,12 +354,12 @@ function AssistantContent() {
               </div>
 
               {/* Dialogue History */}
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 overflow-hidden flex flex-col min-h-0">
                 <Conversation messages={messages} liveTranscript={liveTranscript} />
               </div>
 
               {/* Text Input Bar */}
-              <form onSubmit={handleTextSubmit} className="relative mt-3 pt-3 border-t border-slate-800/80 flex items-center">
+              <form onSubmit={handleTextSubmit} className="shrink-0 relative mt-3 pt-3 border-t border-slate-800/80 flex items-center">
                 <input
                   type="text"
                   value={inputVal}

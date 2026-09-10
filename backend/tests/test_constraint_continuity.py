@@ -60,3 +60,20 @@ async def test_multiple_constraint_changes():
     assert manager.constraints.destination == "Delhi"
     assert manager.constraints.origin == "Pune"
     assert manager.constraints.budget == 4000.0
+
+
+@pytest.mark.asyncio
+async def test_budget_formats():
+    """
+    Test varied budget utterance formats including '5k' and 'budget is 7000'.
+    """
+    manager = ConversationManager(session_id="test-budget-formats")
+    
+    await manager.process_user_utterance("Pune to Mumbai under 5k")
+    assert manager.constraints.budget == 5000.0
+
+    await manager.process_user_utterance("budget is 7000")
+    assert manager.constraints.budget == 7000.0
+
+    await manager.process_user_utterance("keep it under 10000")
+    assert manager.constraints.budget == 10000.0

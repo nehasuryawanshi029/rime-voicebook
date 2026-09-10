@@ -7,6 +7,7 @@ import { FlightCard } from '@/components/FlightCard';
 import { BookingModal } from '@/components/BookingModal';
 import { Flight } from '@/types';
 import { Search, Plane, SlidersHorizontal, ArrowUpDown, RefreshCw, Calendar, IndianRupee } from 'lucide-react';
+import { getApiBaseUrl } from '@/lib/api';
 
 export default function SearchPage() {
   const [origin, setOrigin] = useState('');
@@ -26,7 +27,8 @@ export default function SearchPage() {
       if (destination.trim()) params.append('destination', destination.trim());
       if (budget.trim() && Number(budget) > 0) params.append('budget', budget.trim());
 
-      const res = await fetch(`https://rime-voicebook-backend.onrender.com/api/flights?${params.toString()}`);
+      const apiUrl = getApiBaseUrl();
+      const res = await fetch(`${apiUrl}/api/flights?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         let list = data.flights || [];

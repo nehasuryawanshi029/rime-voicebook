@@ -39,13 +39,10 @@ Without instant barge-in and generation fencing, conversational flight booking b
 ```
 [ User Microphone ]
        │
-       ▼ (LiveKit WebRTC Audio Track)
-[ LiveKit Server ]
-       │
-       ▼
-[ Deepgram STT Streaming / Audio Service ]
-       │ (User Transcripts & Speech Signals)
-       ▼
+       ▼ (Browser Web Speech API)
+[ Web Speech API (STT) ]
+       │ (Transcripts)
+       ▼ (WebSocket Transport)
 [ Conversation & Generation Manager ]
        ├── State Machine: IDLE ➔ LISTENING ➔ THINKING ➔ SEARCHING ➔ SPEAKING ➔ INTERRUPTING
        ├── Monotonic Generation Clock: Increments on every turn or barge-in
@@ -61,7 +58,7 @@ Without instant barge-in and generation fencing, conversational flight booking b
 [ Rime TTS Service (Streaming Audio Chunks) ]
        │ (Low-latency model: mist, speaker: mist, format: mp3)
        ▼
-[ LiveKit Audio Track / Web Audio Player ]
+[ Client Web Audio Player ]
        │ (Interrupted ➔ AudioContext.stop(), audio buffer flushed in < 20ms)
        ▼
 [ User Speaker ]
@@ -73,11 +70,11 @@ Without instant barge-in and generation fencing, conversational flight booking b
 
 ## 4. Tech Stack
 
-- **Frontend**: Next.js 14, TypeScript, Tailwind CSS, Web Audio API, Lucide Icons, LiveKit Client SDK.
-- **Backend**: Python 3.13, FastAPI, asyncio, WebSockets, LiveKit Python API.
+- **Frontend**: Next.js 14, TypeScript, Tailwind CSS, Web Audio API, Lucide Icons.
+- **Backend**: Python 3.13, FastAPI, asyncio, WebSockets.
 - **AI Models**:
   - **LLM**: Google Gemini API (`GEMINI_MODEL=gemini-2.5-flash`).
-  - **STT**: Deepgram STT (`DEEPGRAM_API_KEY`).
+  - **STT**: Browser Web Speech API (`SpeechRecognition`).
   - **TTS**: Rime (`https://users.rime.ai/v1/rime-tts`, model: `mist`, speaker: `mist`).
 - **Database**: Local SQLite database pre-seeded with realistic Indian domestic routes (Pune, Mumbai, Delhi, Bangalore) across IndiGo, Air India, Vistara, Akasa Air, and SpiceJet.
 - **Testing**: pytest, pytest-asyncio (17 automated tests covering concurrency, continuity, and race conditions).
@@ -88,10 +85,11 @@ Without instant barge-in and generation fencing, conversational flight booking b
 
 VoiceBook runs completely on free or promotional developer tiers:
 - **Gemini**: Free API tier (Google AI Studio).
-- **Deepgram**: Free promotional developer credits.
+- **Gemini**: Free API tier (Google AI Studio) (Falling back to rule-based due to deprecation).
 - **Rime**: Free Starter usage tier.
-- **LiveKit**: Free Cloud Build tier.
 - **SQLite**: 100% free, local embedded database (no external paid flight GDS API required).
+
+*Note: LiveKit and Deepgram are present in the configuration but currently inactive in this runtime path.*
 
 > [!NOTE]
 > No paid subscriptions, automatic billing, or credit cards are required to run or evaluate VoiceBook. Provider free tiers are subject to standard rate limits (e.g. 15 RPM on Gemini free tier).

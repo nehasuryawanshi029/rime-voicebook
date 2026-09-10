@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import uuid
 from typing import Dict, Any, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException, Body
@@ -7,7 +8,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.config import settings
-from app.database.database import init_db, query_flights, get_all_bookings, get_booking_by_id, cancel_booking_record
+from app.database.database import (
+    init_db,
+    query_flights,
+    get_all_bookings,
+    get_booking_by_id,
+    cancel_booking_record,
+    create_booking_record,
+    get_user_by_username_or_email,
+    verify_password,
+    create_user,
+)
 from app.database.seed import seed_database
 from app.services.rime import rime_service
 from app.services.gemini import gemini_service
@@ -26,13 +37,29 @@ app = FastAPI(
     version="1.0.0"
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+cors_origins_raw = os.getenv("CORS_ORIGINS", "").strip()
+if cors_origins_raw and cors_origins_raw != "*":
+    explicit_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+    for dev_origin in ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:8000", "http://127.0.0.1:8000"]:
+        if dev_origin not in explicit_origins:
+            explicit_origins.append(dev_origin)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=explicit_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # Standards-compliant dynamic origin reflection: Starlette will mirror back caller's origin
+    # while correctly supporting allow_credentials=True (unlike allow_origins=['*'] which browsers reject)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^https?://.*$",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Active conversation managers by session_id
 active_sessions: Dict[str, ConversationManager] = {}
@@ -50,7 +77,7 @@ def health_check():
     return {
         "status": "healthy",
         "services": {
-            "rime": "CONNECTED" if rime_service.is_healthy() else "MOCK_READY",
+            "rime": "CONNECTED" if rime_service.is_healthy() else "FALLBACK",
             "gemini": "CONNECTED" if gemini_service.is_healthy() else "RULE_BASED_READY",
             "deepgram": "CONNECTED" if deepgram_service.is_healthy() else "BROWSER_STT_READY",
             "livekit": "CONFIGURED" if settings.LIVEKIT_URL and "mock" not in settings.LIVEKIT_URL else "DEV_LOCAL"
@@ -159,9 +186,136 @@ async def simulate_interrupt(req: InterruptRequest):
     }
 
 
+@app.get("/api/evaluation/results")
+def get_evaluation_results():
+    """
+    Returns the latest evaluation results from rapid_interruption_results.json
+    """
+    import json
+    import os
+    
+    # Path is relative to backend/ (usually runs from backend or project root)
+    # The evaluation scripts write to evaluation/results/
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    results_path = os.path.join(base_dir, "evaluation", "results", "rapid_interruption_results.json")
+    
+    if os.path.exists(results_path):
+        try:
+            with open(results_path, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to read evaluation results: {e}")
+            raise HTTPException(status_code=500, detail="Failed to read evaluation results")
+    else:
+        raise HTTPException(status_code=404, detail="Evaluation results not found")
+
+class LoginRequest(BaseModel):
+    username_or_email: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+    name: Optional[str] = None
+
+
+@app.post("/api/auth/login")
+def auth_login(req: LoginRequest):
+    user = get_user_by_username_or_email(req.username_or_email.strip())
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username/email or password")
+    
+    if not verify_password(req.password, user["hashed_password"], user["salt"]):
+        raise HTTPException(status_code=401, detail="Invalid username/email or password")
+    
+    token = f"vb-auth-{uuid.uuid4().hex}"
+    return {
+        "success": True,
+        "token": token,
+        "user": {
+            "id": user["id"],
+            "username": user["username"],
+            "email": user["email"],
+            "name": user["name"]
+        }
+    }
+
+
+@app.post("/api/auth/register")
+def auth_register(req: RegisterRequest):
+    uname = req.username.strip()
+    uemail = req.email.strip().lower()
+    
+    if not uname:
+        raise HTTPException(status_code=400, detail="Username is required")
+    if not uemail or "@" not in uemail:
+        raise HTTPException(status_code=400, detail="A valid email address is required")
+    if not req.password:
+        raise HTTPException(status_code=400, detail="Password is required")
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
+    
+    if get_user_by_username_or_email(uname):
+        raise HTTPException(status_code=400, detail="Account already exists with this username")
+    if get_user_by_username_or_email(uemail):
+        raise HTTPException(status_code=400, detail="Account already exists with this email")
+    
+    name = req.name.strip() if req.name and req.name.strip() else uname
+    user = create_user(
+        username=uname,
+        email=uemail,
+        password=req.password,
+        name=name
+    )
+    token = f"vb-auth-{uuid.uuid4().hex}"
+    return {
+        "success": True,
+        "token": token,
+        "user": user
+    }
+
+
+@app.post("/api/auth/guest")
+def auth_guest():
+    guest_id = f"guest-{uuid.uuid4().hex[:8]}"
+    return {
+        "success": True,
+        "is_guest": True,
+        "guest_id": guest_id,
+        "name": "Guest User"
+    }
+
+
+@app.post("/api/auth/logout")
+def auth_logout():
+    return {"success": True, "message": "Logged out successfully"}
+
+
 @app.get("/api/bookings")
-def list_bookings():
-    return {"bookings": get_all_bookings()}
+def list_bookings(user_id: Optional[str] = Query(None)):
+    return {"bookings": get_all_bookings(user_id=user_id)}
+
+
+class BookingRequest(BaseModel):
+    flight_id: int
+    passengers: int = 1
+    passenger_name: Optional[str] = "Voice User"
+    user_id: Optional[str] = None
+
+
+@app.post("/api/bookings")
+def create_booking(req: BookingRequest):
+    booking_id = f"VB-{str(uuid.uuid4())[:8].upper()}"
+    res = create_booking_record(
+        booking_id=booking_id,
+        flight_id=req.flight_id,
+        passenger_name=req.passenger_name or "Voice User",
+        passengers_count=req.passengers,
+        user_id=req.user_id
+    )
+    return {"success": True, "booking": res}
 
 
 @app.get("/api/bookings/{booking_id}")
@@ -232,7 +386,7 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
             "voice_state": session.state_machine.current_state.value,
             "metrics": metrics_collector.snapshot(),
             "services": {
-                "rime": "CONNECTED" if rime_service.is_healthy() else "MOCK_READY",
+                "rime": "CONNECTED" if rime_service.is_healthy() else "FALLBACK",
                 "gemini": "CONNECTED" if gemini_service.is_healthy() else "RULE_BASED_READY",
                 "deepgram": "CONNECTED" if deepgram_service.is_healthy() else "BROWSER_STT_READY",
                 "livekit": "CONFIGURED" if settings.LIVEKIT_URL and "mock" not in settings.LIVEKIT_URL else "DEV_LOCAL"
@@ -252,7 +406,7 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
             if msg_type == "user_speech":
                 transcript = data.get("transcript", "")
                 if transcript.strip():
-                    await session.process_user_utterance(transcript)
+                    asyncio.create_task(session.process_user_utterance(transcript))
 
             elif msg_type == "interrupt":
                 reason = data.get("reason", "client_interrupted")
@@ -262,6 +416,25 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
                 delay = float(data.get("delay", 4.0))
                 session.custom_search_delay = delay
                 await websocket.send_json({"type": "delay_updated", "delay": delay})
+
+            elif msg_type == "set_language":
+                lang = data.get("language", "en")
+                if lang in ("en", "hi", "mr"):
+                    session.language = lang
+                    logger.info(f"[{session_id}] Language set to: {lang}")
+                    await websocket.send_json({"type": "language_updated", "language": lang})
+                else:
+                    await websocket.send_json({"type": "error", "message": f"Unsupported language: {lang}"})
+
+            elif msg_type == "update_budget":
+                budget = data.get("budget")
+                session.constraints.budget = budget
+                # Trigger search if we have origin and destination
+                if session.constraints.is_searchable():
+                    gen = session.generation_manager.new_generation("Manual budget update").generation
+                    await session._execute_search_flow(gen, f"Checking for flights under {budget} rupees" if budget else "Checking all flights", session.language)
+                else:
+                    await session.emit_event("state_updated", {"constraints": session.constraints.model_dump()})
 
             elif msg_type == "select_flight":
                 flight_id = data.get("flight_id")
@@ -274,11 +447,11 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
             elif msg_type == "book_flight":
                 flight_id = data.get("flight_id") or (session.constraints.selected_flight["id"] if session.constraints.selected_flight else None)
                 gen = session.generation_manager.current_generation
-                await session._execute_booking_flow(gen, flight_id, "Booking flight requested from UI")
+                await session._execute_booking_flow(gen, flight_id, "Booking flight requested from UI", session.language)
 
             elif msg_type == "cancel_booking":
                 gen = session.generation_manager.current_generation
-                await session._execute_cancel_flow(gen, "Cancel booking requested from UI")
+                await session._execute_cancel_flow(gen, "Cancel booking requested from UI", session.language)
 
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong", "time": data.get("time")})

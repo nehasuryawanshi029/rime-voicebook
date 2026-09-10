@@ -1,2 +1,2 @@
-﻿import os
-print(Python runner ready)
+import os
+print("Python runner ready")

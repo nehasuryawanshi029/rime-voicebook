@@ -1,20 +1,36 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { BookingRecord } from '@/types';
-import { Ticket, Plane, Calendar, User, ArrowRight, XCircle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { Ticket, Plane, Calendar, User, ArrowRight, XCircle, CheckCircle2, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
+import { getApiBaseUrl } from '@/lib/api';
 
 export default function BookingsPage() {
+  const router = useRouter();
+  const { user, isGuest, guestId, isAuthenticated, isLoading: authLoading } = useAuth();
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchBookings = async () => {
+  // Route protection
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated && !isGuest) {
+      router.push('/login');
+    }
+  }, [authLoading, isAuthenticated, isGuest, router]);
+
+  const fetchBookings = useCallback(async () => {
+    if (authLoading || (!isAuthenticated && !isGuest)) return;
     setIsLoading(true);
     try {
-      const res = await fetch('https://rime-voicebook-backend.onrender.com/api/bookings');
+      const apiUrl = getApiBaseUrl();
+      // Isolate bookings: authenticated users see their bookings, guests only see their isolated guest session
+      const queryParam = isAuthenticated && user ? `?user_id=${encodeURIComponent(user.id)}` : `?user_id=${encodeURIComponent(guestId || 'guest')}`;
+      const res = await fetch(`${apiUrl}/api/bookings${queryParam}`);
       if (res.ok) {
         const data = await res.json();
         setBookings(data.bookings || []);
@@ -24,16 +40,17 @@ export default function BookingsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [authLoading, isAuthenticated, isGuest, user, guestId]);
 
   useEffect(() => {
     fetchBookings();
-  }, []);
+  }, [fetchBookings]);
 
   const handleCancel = async (bookingId: string) => {
     if (!confirm(`Are you sure you want to cancel booking ${bookingId}?`)) return;
     try {
-      const res = await fetch(`https://rime-voicebook-backend.onrender.com/api/bookings/${bookingId}/cancel`, {
+      const apiUrl = getApiBaseUrl();
+      const res = await fetch(`${apiUrl}/api/bookings/${bookingId}/cancel`, {
         method: 'POST',
       });
       if (res.ok) {
@@ -44,18 +61,46 @@ export default function BookingsPage() {
     }
   };
 
+  if (authLoading || (!isAuthenticated && !isGuest)) {
+    return (
+      <div className="min-h-screen bg-[#070b14] flex items-center justify-center text-slate-400 text-xs">
+        <div className="space-y-3 text-center">
+          <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p>Verifying VoiceBook session...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-[#070b14] text-slate-100 selection:bg-violet-600">
       <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {isGuest && (
+          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center space-x-2.5">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-400" />
+              <span>
+                <strong>Guest Mode:</strong> You are viewing an isolated guest session. Bookings here are temporary and will not persist across accounts.
+              </span>
+            </div>
+            <Link
+              href="/login"
+              className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-semibold whitespace-nowrap transition-all self-start sm:self-auto"
+            >
+              Sign in for permanent bookings
+            </Link>
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
               My Bookings
             </h1>
             <p className="text-xs sm:text-sm text-slate-400">
-              Manage your confirmed and completed VoiceBook reservations.
+              {isAuthenticated && user ? `Confirmed reservations for ${user.name} (${user.email})` : 'Confirmed reservations for this session.'}
             </p>
           </div>
           <button

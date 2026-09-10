@@ -29,6 +29,9 @@ export const VoiceEngineeringPanel: React.FC<VoiceEngineeringPanelProps> = ({
     if (status === 'MOCK_READY' || status === 'RULE_BASED_READY' || status === 'BROWSER_STT_READY' || status === 'DEV_LOCAL') {
       return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">READY (DEV)</span>;
     }
+    if (status === 'FALLBACK') {
+      return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30">FALLBACK (LOCAL)</span>;
+    }
     return <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">ERROR</span>;
   };
 
@@ -64,22 +67,14 @@ export const VoiceEngineeringPanel: React.FC<VoiceEngineeringPanelProps> = ({
               <ShieldCheck className="w-3.5 h-3.5 text-violet-400" />
               <span>Service Connections</span>
             </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between">
                 <span className="text-xs font-semibold text-slate-300">Rime TTS</span>
                 {getStatusBadge(services.rime)}
               </div>
               <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-300">Deepgram STT</span>
-                {getStatusBadge(services.deepgram)}
-              </div>
-              <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between">
                 <span className="text-xs font-semibold text-slate-300">Gemini LLM</span>
                 {getStatusBadge(services.gemini)}
-              </div>
-              <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-300">LiveKit</span>
-                {getStatusBadge(services.livekit)}
               </div>
             </div>
           </div>
@@ -115,7 +110,7 @@ export const VoiceEngineeringPanel: React.FC<VoiceEngineeringPanelProps> = ({
             </h4>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80">
-                <p className="text-[10px] font-mono text-slate-400 uppercase">End-of-Speech → First Audio</p>
+                <p className="text-[10px] font-mono text-slate-400 uppercase">Backend Rime First-Byte Latency</p>
                 <p className="text-base font-bold font-mono text-emerald-400 mt-1">
                   {formatMs(metrics.end_of_speech_to_first_audio)}
                 </p>
@@ -129,7 +124,7 @@ export const VoiceEngineeringPanel: React.FC<VoiceEngineeringPanelProps> = ({
               </div>
 
               <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80">
-                <p className="text-[10px] font-mono text-slate-400 uppercase">Interruption Stop Latency</p>
+                <p className="text-[10px] font-mono text-slate-400 uppercase">Backend Interruption Callback Latency</p>
                 <p className="text-base font-bold font-mono text-rose-400 mt-1">
                   {formatMs(metrics.interruption_stop_latency)}
                 </p>

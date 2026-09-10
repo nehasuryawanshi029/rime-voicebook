@@ -8,7 +8,7 @@ VoiceBook is designed for **full-duplex conversational voice** interaction. Unli
 +-------------------------------------------------------------------------------+
 |                               USER WORKSTATION                                |
 |                                                                               |
-|  [ User Microphone ] ───(WebRTC Audio Track)───┐                              |
+|  [ User Microphone ] ───(Browser Audio)────────┐                              |
 |                                                │                              |
 |  [ User Speaker ]   ◄───(Web Audio Chunks)─────┼───────────────────────────┐  |
 |                                                │                           │  |
@@ -20,14 +20,14 @@ VoiceBook is designed for **full-duplex conversational voice** interaction. Unli
 |    - Voice Engineering Telemetry & Timeline    │                           │  |
 +────────────────────────────────────────────────┼───────────────────────────┼──+
                                                  │                           │
-                                         (LiveKit WebRTC)               (LiveKit/WS)
+                                         (WebSocket)                    (WebSocket)
                                                  │                           │
 +────────────────────────────────────────────────▼───────────────────────────┼──+
 |                              VOICEBOOK BACKEND                             │  |
 |                                                                            │  |
-|  1. Audio Transport:                                                       │  |
-|     LiveKit Audio Receiver ➔ Deepgram STT (Stream / Interim Transcripts)   │  |
-|                                │                                           │  |
+|  1. Audio Transport:                                                       |  |
+|     Browser Web Speech API ➔ FastAPI WebSocket (Transcripts Only)          |  |
+|                                │                                           |  |
 |  2. Turn & Barge-in Detector: ─┴────────────────────────────────────────┐  │  |
 |     - Speech Start / End Detection                                      │  │  |
 |     - Mid-speech / Mid-search Barge-in Trigger                          │  │  |

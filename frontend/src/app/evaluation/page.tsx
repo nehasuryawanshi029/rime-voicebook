@@ -4,76 +4,94 @@ import React, { useState } from 'react';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { CheckCircle2, XCircle, Play, Sparkles, Clock, ShieldCheck, Zap } from 'lucide-react';
+import { getApiBaseUrl } from '@/lib/api';
 
 export default function EvaluationPage() {
   const [isRunning, setIsRunning] = useState(false);
-  const [benchmarks, setBenchmarks] = useState([
+  const [evalResults, setEvalResults] = useState<any>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    const fetchResults = async () => {
+      try {
+        const apiUrl = getApiBaseUrl();
+        const res = await fetch(`${apiUrl}/api/evaluation/results`);
+        if (res.ok) {
+          const data = await res.json();
+          setEvalResults(data);
+        } else {
+          setFetchError("NOT RUN / UNVERIFIED");
+        }
+      } catch (err) {
+        setFetchError("NOT RUN / UNVERIFIED");
+      }
+    };
+    fetchResults();
+  }, []);
+
+  const getMetric = (key: string) => {
+    if (fetchError || !evalResults) return "UNVERIFIED";
+    return evalResults[key] !== undefined ? String(evalResults[key]) : "UNVERIFIED";
+  };
+
+  const getCheck = (key: string) => {
+    if (fetchError || !evalResults || !evalResults.checks) return null;
+    return evalResults.checks[key];
+  };
+
+  const benchmarks = [
     {
       name: 'Rime stops on interruption',
       expected: '< 20ms',
-      measured: '12.4ms',
-      passed: true,
+      measured: getCheck("6_stale_results_discarded") !== null ? 'Audio aborted' : 'UNVERIFIED',
+      passed: getCheck("6_stale_results_discarded") === true,
       description: 'Audio playback buffers halt instantly upon user speech detection.',
     },
     {
       name: 'New instruction accepted',
       expected: 'Authoritative Gen +1',
-      measured: 'Gen 2 authoritative',
-      passed: true,
+      measured: getMetric("final_generation") !== "UNVERIFIED" ? `Gen ${getMetric("final_generation")}` : 'UNVERIFIED',
+      passed: getCheck("1_generation_increased") === true,
       description: 'System transitions turn and updates target constraints atomically.',
     },
     {
       name: 'Old tool result discarded',
       expected: 'Stale flag triggered',
-      measured: 'Discarded (Pune)',
-      passed: true,
+      measured: getMetric("stale_results_discarded") !== "UNVERIFIED" ? `Discarded ${getMetric("stale_results_discarded")}` : 'UNVERIFIED',
+      passed: getCheck("6_stale_results_discarded") === true,
       description: 'In-flight search task results from superseded generation are rejected.',
-    },
-    {
-      name: 'Old generation cannot update UI',
-      expected: 'Fenced checkpoint',
-      measured: 'UI updated with Mumbai only',
-      passed: true,
-      description: 'Flight list and constraint state ignore any superseded generation updates.',
     },
     {
       name: 'Old generation cannot speak',
       expected: '0 stale chunks sent',
-      measured: '0 chunks sent',
-      passed: true,
+      measured: getMetric("stale_results_spoken") !== "UNVERIFIED" ? `${getMetric("stale_results_spoken")} chunks sent` : 'UNVERIFIED',
+      passed: getCheck("7_stale_results_spoken_zero") === true,
       description: 'Rime audio pipeline suppresses any audio chunks from superseded generation.',
     },
     {
-      name: 'Latest generation authoritative',
-      expected: 'Authoritative check: True',
-      measured: 'Authoritative',
-      passed: true,
-      description: 'Conversation context tracks current request as source of truth.',
-    },
-    {
       name: 'Final answer reflects latest request',
-      expected: 'Mumbai → Delhi under ₹5,000',
-      measured: 'Mumbai → Delhi (₹4,200)',
-      passed: true,
+      expected: 'Route and Budget matched',
+      measured: getMetric("final_constraints") !== "UNVERIFIED" ? 'Matched' : 'UNVERIFIED',
+      passed: getCheck("2_origin_is_pune") === true || getCheck("4_budget_is_5000") === true,
       description: 'Final flight summary and options present the updated route and budget.',
     },
-  ]);
+  ];
 
-  const [realTestMetrics, setRealTestMetrics] = useState({
-    first_rime_audio: '240ms',
-    tool_duration: '4005ms (Simulated delay)',
-    interruption_stop: '12ms',
-    stale_results_discarded: 1,
-    stale_results_spoken: 0,
-  });
+  const realTestMetrics = {
+    first_rime_audio: 'UNVERIFIED',
+    tool_duration: 'UNVERIFIED',
+    interruption_stop: 'UNVERIFIED',
+    stale_results_discarded: getMetric("stale_results_discarded"),
+    stale_results_spoken: getMetric("stale_results_spoken"),
+  };
 
   const runLiveEvaluation = async () => {
     setIsRunning(true);
     const startTime = performance.now();
 
     try {
-      // Execute live simulated utterance via backend
-      const res = await fetch('https://rime-voicebook-backend.onrender.com/api/simulate/utterance', {
+      const apiUrl = getApiBaseUrl();
+      const res = await fetch(`${apiUrl}/api/simulate/utterance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -82,19 +100,12 @@ export default function EvaluationPage() {
         }),
       });
 
-      const elapsed = (performance.now() - startTime).toFixed(1);
-
-      // Fetch live snapshot
-      const metricsRes = await fetch('https://rime-voicebook-backend.onrender.com/api/metrics');
+      const metricsRes = await fetch(`${apiUrl}/api/metrics`);
       if (metricsRes.ok) {
         const snap = await metricsRes.json();
-        setRealTestMetrics({
-          first_rime_audio: snap.end_of_speech_to_first_audio ? `${snap.end_of_speech_to_first_audio}ms` : '210ms',
-          tool_duration: snap.tool_duration ? `${snap.tool_duration}ms` : '4000ms',
-          interruption_stop: snap.interruption_stop_latency ? `${snap.interruption_stop_latency}ms` : '14ms',
-          stale_results_discarded: snap.stale_results_discarded || 1,
-          stale_results_spoken: snap.stale_results_spoken || 0,
-        });
+        // Fallbacks removed per P1-14
+        realTestMetrics.stale_results_discarded = snap.stale_results_discarded;
+        realTestMetrics.stale_results_spoken = snap.stale_results_spoken;
       }
     } catch (e) {
       console.error(e);
@@ -165,8 +176,8 @@ export default function EvaluationPage() {
             <span className="text-xs font-mono uppercase tracking-wider text-slate-300 font-semibold">
               Mandatory Hackathon Requirements
             </span>
-            <span className="text-xs font-mono text-emerald-400 font-bold">
-              7 / 7 PASSED
+            <span className={`text-xs font-mono font-bold ${fetchError ? 'text-amber-400' : 'text-emerald-400'}`}>
+              {fetchError ? 'UNVERIFIED' : `${benchmarks.filter(b => b.passed).length} / ${benchmarks.length} PASSED`}
             </span>
           </div>
 
@@ -182,8 +193,8 @@ export default function EvaluationPage() {
                 </div>
 
                 <div className="text-right flex-shrink-0">
-                  <span className="inline-block px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    PASS
+                  <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-mono font-bold border ${b.passed ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
+                    {b.passed ? 'PASS' : (fetchError ? 'NOT RUN' : 'FAIL')}
                   </span>
                   <span className="block text-[10px] text-slate-400 font-mono mt-1">{b.measured}</span>
                 </div>

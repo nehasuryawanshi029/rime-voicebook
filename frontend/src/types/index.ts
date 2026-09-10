@@ -44,6 +44,8 @@ export interface ConversationMessage {
   timestamp: string;
   generation: number;
   interrupted?: boolean;
+  ttsProvider?: 'rime' | 'browser';
+  language?: string;
 }
 
 export interface VoiceMetrics {

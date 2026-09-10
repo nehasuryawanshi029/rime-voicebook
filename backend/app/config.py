@@ -3,9 +3,14 @@ from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# Resolve path to the project root .env regardless of where uvicorn CWD is
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_env_file_path = os.path.join(_project_root, ".env")
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_env_file_path,
         env_file_encoding="utf-8",
         extra="ignore"
     )
@@ -24,8 +29,8 @@ class Settings(BaseSettings):
 
     # Rime TTS
     RIME_API_KEY: Optional[str] = None
-    RIME_MODEL: str = "mist"
-    RIME_SPEAKER: str = "mist"
+    RIME_MODEL: str = "mistv3"
+    RIME_SPEAKER: str = "marsh"
     RIME_LANGUAGE: str = "en"
 
     # Voice Agent & Search Simulation
@@ -34,7 +39,7 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
 
     # SQLite Database Path
-    DB_PATH: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "flights.db")
+    DB_PATH: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "voicebook.db")
 
 
 settings = Settings()

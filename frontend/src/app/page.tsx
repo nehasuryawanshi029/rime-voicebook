@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
+import { useAuth } from '@/context/AuthContext';
 import {
   Mic,
   Zap,
@@ -20,6 +21,10 @@ import {
 } from 'lucide-react';
 
 export default function LandingPage() {
+  const { isAuthenticated, isGuest } = useAuth();
+  const targetAssistant = isAuthenticated || isGuest ? '/assistant' : '/login';
+  const targetDemo = isAuthenticated || isGuest ? '/assistant?demo=true' : '/login';
+
   return (
     <div className="min-h-screen flex flex-col bg-[#070b14] text-slate-100 selection:bg-violet-600">
       <Navbar />
@@ -54,7 +59,7 @@ export default function LandingPage() {
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
             <Link
-              href="/assistant"
+              href={targetAssistant}
               className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-8 py-4 rounded-2xl bg-gradient-to-r from-violet-600 via-indigo-600 to-violet-700 hover:from-violet-500 hover:to-indigo-500 text-white font-semibold text-base shadow-xl shadow-violet-600/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
             >
               <Mic className="w-5 h-5" />
@@ -63,7 +68,7 @@ export default function LandingPage() {
             </Link>
 
             <Link
-              href="/assistant?demo=true"
+              href={targetDemo}
               className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-6 py-4 rounded-2xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 font-semibold text-sm transition-all hover:border-slate-600"
             >
               <Zap className="w-4 h-4 text-amber-400" />
@@ -231,7 +236,7 @@ export default function LandingPage() {
 
           <div className="pt-2">
             <Link
-              href="/assistant?demo=true"
+              href={targetDemo}
               className="inline-flex items-center space-x-2 px-8 py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-semibold text-sm shadow-xl shadow-violet-600/30 transition-all hover:scale-105"
             >
               <Zap className="w-4 h-4" />

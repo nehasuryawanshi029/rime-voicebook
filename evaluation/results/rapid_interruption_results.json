@@ -1,6 +1,6 @@
 {
   "test": "rapid_interruption_test",
-  "timestamp": "2026-09-07T16:19:46.829842+00:00",
+  "timestamp": "2026-09-09T23:59:37.001015+00:00",
   "utterances_sent": [
     "Find Pune to Delhi",
     "Actually Mumbai",
@@ -27,6 +27,7 @@
     "date": null,
     "budget": 5000.0,
     "passengers": 1,
-    "selected_flight": null
+    "selected_flight": null,
+    "booking_id": null
   }
 }

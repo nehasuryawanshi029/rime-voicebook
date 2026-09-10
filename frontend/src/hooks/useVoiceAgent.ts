@@ -9,6 +9,7 @@ import {
   ServiceStatus,
   TimelineEvent,
 } from '@/types';
+import { getWsUrl } from '@/lib/api';
 
 export function useVoiceAgent() {
   const [sessionId, setSessionId] = useState<string>('');
@@ -19,6 +20,7 @@ export function useVoiceAgent() {
   const [liveTranscript, setLiveTranscript] = useState<string>('');
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [demoMode, setDemoMode] = useState<boolean>(true);
+  const [language, setLanguageState] = useState<string>('en');
   const [constraints, setConstraints] = useState<BookingConstraints>({
     origin: null,
     destination: null,
@@ -42,6 +44,7 @@ export function useVoiceAgent() {
     livekit: 'CONFIGURED',
   });
   const [isListening, setIsListening] = useState<boolean>(false);
+  const [reconnectTrigger, setReconnectTrigger] = useState<number>(0);
 
   const socketRef = useRef<WebSocket | null>(null);
   const pendingQueueRef = useRef<any[]>([]);
@@ -52,20 +55,19 @@ export function useVoiceAgent() {
   const voiceStateRef = useRef<VoiceState>('IDLE');
   const reconnectTimerRef = useRef<any>(null);
   const reconnectAttemptsRef = useRef<number>(0);
-  const isListeningRef = useRef<boolean>(false);
+  const languageRef = useRef<string>('en');
 
   // Keep refs synchronized
   useEffect(() => {
-    currentGenRef.current = currentGen;
+    // Only used as a fallback. Synchronous updates happen in WS handler.
+    if (currentGen > currentGenRef.current) {
+      currentGenRef.current = currentGen;
+    }
   }, [currentGen]);
 
   useEffect(() => {
     voiceStateRef.current = voiceState;
   }, [voiceState]);
-
-  useEffect(() => {
-    isListeningRef.current = isListening;
-  }, [isListening]);
 
 
   // Initialize AudioContext
@@ -80,6 +82,8 @@ export function useVoiceAgent() {
     return audioContextRef.current;
   }, []);
 
+  const nextAudioTimeRef = useRef<number>(0);
+
   // Stop and flush all playing audio immediately (Interruption stop latency < 20ms)
   const stopAllAudio = useCallback(() => {
     try {
@@ -92,12 +96,13 @@ export function useVoiceAgent() {
         }
       });
       activeAudioSourcesRef.current = [];
+      nextAudioTimeRef.current = 0; // Reset audio scheduling queue
     } catch (e) {
       console.error('Error stopping audio playback:', e);
     }
   }, []);
 
-  // Play audio chunk with generation fencing
+  // Play audio chunk with generation fencing and sequential scheduling
   const playAudioChunk = useCallback(
     async (base64Audio: string, chunkGen: number) => {
       if (chunkGen < currentGenRef.current) {
@@ -113,17 +118,15 @@ export function useVoiceAgent() {
           bytes[i] = binaryString.charCodeAt(i);
         }
 
-        let audioBuffer: AudioBuffer;
-        try {
-          audioBuffer = await ctx.decodeAudioData(bytes.buffer.slice(0));
-        } catch {
-          // Fallback: 24kHz 16-bit mono PCM
-          const int16Array = new Int16Array(bytes.buffer);
-          audioBuffer = ctx.createBuffer(1, int16Array.length, 24000);
-          const channelData = audioBuffer.getChannelData(0);
-          for (let i = 0; i < int16Array.length; i++) {
-            channelData[i] = int16Array[i] / 32768.0;
-          }
+        // We know Rime will stream PCM 24000Hz 16-bit Mono.
+        // Convert raw bytes to Int16Array, then into an AudioBuffer.
+        const validLen = Math.floor(bytes.buffer.byteLength / 2) * 2;
+        const validBuffer = bytes.buffer.slice(0, validLen);
+        const int16Array = new Int16Array(validBuffer);
+        const audioBuffer = ctx.createBuffer(1, int16Array.length, 24000);
+        const channelData = audioBuffer.getChannelData(0);
+        for (let i = 0; i < int16Array.length; i++) {
+          channelData[i] = int16Array[i] / 32768.0;
         }
 
         // Generation check before outputting sound
@@ -132,7 +135,15 @@ export function useVoiceAgent() {
         const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(ctx.destination);
-        source.start();
+
+        // Schedule sequential playback
+        const currentTime = ctx.currentTime;
+        if (nextAudioTimeRef.current < currentTime) {
+          nextAudioTimeRef.current = currentTime;
+        }
+        
+        source.start(nextAudioTimeRef.current);
+        nextAudioTimeRef.current += audioBuffer.duration;
 
         activeAudioSourcesRef.current.push(source);
         source.onended = () => {
@@ -171,7 +182,7 @@ export function useVoiceAgent() {
     const connectWebSocket = () => {
       if (unmounted) return;
 
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//rime-voicebook-backend.onrender.com/ws/voice/${currentSessionId}`;
+      const wsUrl = getWsUrl(`/ws/voice/${currentSessionId}`);
 
       setConnectionStatus((prev) => (reconnectAttemptsRef.current > 0 ? 'RECONNECTING' : 'CONNECTING'));
 
@@ -210,6 +221,7 @@ export function useVoiceAgent() {
 
             if (msg.type === 'connected') {
               setCurrentGen(msg.generation);
+              currentGenRef.current = msg.generation;
               setVoiceState(msg.voice_state);
               if (msg.metrics) setMetrics((m) => ({ ...m, ...msg.metrics }));
               if (msg.services) setServices((s) => ({ ...s, ...msg.services }));
@@ -219,6 +231,7 @@ export function useVoiceAgent() {
               setVoiceState('INTERRUPTED');
               const newG = msg.data?.new_generation || msg.generation;
               setCurrentGen(newG);
+              currentGenRef.current = newG;
               if (msg.data?.metrics) setMetrics((m) => ({ ...m, ...msg.data.metrics }));
 
               // Mark last assistant message as interrupted
@@ -239,6 +252,7 @@ export function useVoiceAgent() {
             } else if (msg.type === 'user_utterance') {
               setVoiceState('THINKING');
               setCurrentGen(msg.generation);
+              currentGenRef.current = msg.generation;
               setLiveTranscript('');
               setMessages((prev) => [
                 ...prev,
@@ -252,6 +266,8 @@ export function useVoiceAgent() {
               ]);
             } else if (msg.type === 'agent_speech_start') {
               setVoiceState('SPEAKING');
+              const ttsProvider = msg.data.tts_provider || 'rime';
+              const speechLang = msg.data.language || 'en';
               setMessages((prev) => [
                 ...prev,
                 {
@@ -260,11 +276,42 @@ export function useVoiceAgent() {
                   content: msg.data.text,
                   timestamp: new Date().toLocaleTimeString(),
                   generation: msg.generation,
+                  ttsProvider: ttsProvider as 'rime' | 'browser',
+                  language: speechLang,
                 },
               ]);
+
+              // Browser TTS fallback for languages not supported by Rime (e.g. Marathi)
+              if (ttsProvider === 'browser' && typeof window !== 'undefined' && window.speechSynthesis) {
+                try {
+                  // Cancel any ongoing browser speech
+                  window.speechSynthesis.cancel();
+                  const utterance = new SpeechSynthesisUtterance(msg.data.text);
+                  // Map language codes to BCP 47 tags
+                  const langMap: Record<string, string> = { en: 'en-IN', hi: 'hi-IN', mr: 'mr-IN' };
+                  utterance.lang = langMap[speechLang] || 'en-IN';
+                  utterance.rate = 1.0;
+                  utterance.pitch = 1.0;
+                  utterance.onend = () => {
+                    // Only update state if generation still matches
+                    if (msg.generation >= currentGenRef.current) {
+                      setVoiceState('COMPLETED');
+                    }
+                  };
+                  utterance.onerror = (e) => {
+                    console.warn('Browser TTS error:', e);
+                    setVoiceState('COMPLETED');
+                  };
+                  window.speechSynthesis.speak(utterance);
+                } catch (err) {
+                  console.warn('Browser speechSynthesis failed:', err);
+                }
+              }
             } else if (msg.type === 'agent_speech_end') {
               setVoiceState('COMPLETED');
               if (msg.data?.metrics) setMetrics((m) => ({ ...m, ...msg.data.metrics }));
+            } else if (msg.type === 'services_updated') {
+              if (msg.data?.services) setServices((s) => ({ ...s, ...msg.data.services }));
             } else if (msg.type === 'state_updated') {
               if (msg.data?.constraints) {
                 setConstraints((c) => ({ ...c, ...msg.data.constraints }));
@@ -351,7 +398,70 @@ export function useVoiceAgent() {
         socketRef.current = null;
       }
     };
-  }, [stopAllAudio, playAudioChunk]);
+  }, [stopAllAudio, playAudioChunk, reconnectTrigger]);
+
+  // Respond to global logout/exit guest event: immediately halt mic, audio playback, and WebSocket
+  useEffect(() => {
+    const handleLogoutEvent = () => {
+      // 1. Stop Speech Recognition & mic
+      try {
+        if (recognitionRef.current) {
+          recognitionRef.current.onresult = null;
+          recognitionRef.current.onerror = null;
+          recognitionRef.current.onend = null;
+          recognitionRef.current.stop();
+          if (typeof recognitionRef.current.abort === 'function') {
+            recognitionRef.current.abort();
+          }
+        }
+      } catch (err) {
+        console.warn('Error halting SpeechRecognition on logout:', err);
+      }
+      setIsListening(false);
+      setLiveTranscript('');
+
+      // 2. Stop all active audio playback immediately
+      stopAllAudio();
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        try {
+          audioContextRef.current.suspend();
+        } catch {}
+      }
+
+      // 3. Clear speech state & conversation history
+      setVoiceState('IDLE');
+      voiceStateRef.current = 'IDLE';
+      setMessages([]);
+      setFlights([]);
+      setConstraints({
+        origin: null,
+        destination: null,
+        date: null,
+        budget: null,
+        passengers: 1,
+        selected_flight: null,
+      });
+
+      // 4. Close WebSocket
+      const ws = socketRef.current;
+      if (ws) {
+        try {
+          ws.close(1000, 'User logged out');
+        } catch {}
+        socketRef.current = null;
+      }
+      setConnectionStatus('DISCONNECTED');
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('voicebook:logout', handleLogoutEvent);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('voicebook:logout', handleLogoutEvent);
+      }
+    };
+  }, [stopAllAudio]);
 
   // Handle User Speech Barge-in & Interruption
   const triggerInterruption = useCallback(
@@ -403,7 +513,9 @@ export function useVoiceAgent() {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'en-IN';
+      // Set language based on current language selection
+      const langMap: Record<string, string> = { en: 'en-IN', hi: 'hi-IN', mr: 'mr-IN' };
+      recognition.lang = langMap[languageRef.current] || 'en-IN';
 
       recognition.onresult = (event: any) => {
         let interim = '';
@@ -420,7 +532,11 @@ export function useVoiceAgent() {
 
         if (interim) {
           setLiveTranscript(interim);
-          if (voiceStateRef.current === 'SPEAKING') {
+          if (
+            voiceStateRef.current === 'SPEAKING' || 
+            voiceStateRef.current === 'SEARCHING' || 
+            voiceStateRef.current === 'THINKING'
+          ) {
             triggerInterruption('speech_detected_barge_in');
           }
         }
@@ -431,37 +547,13 @@ export function useVoiceAgent() {
         }
       };
 
-      recognition.onspeechstart = () => {
-        if (voiceStateRef.current === 'IDLE' || voiceStateRef.current === 'COMPLETED') {
-          setVoiceState('LISTENING');
-        }
-      };
-
-      recognition.onspeechend = () => {
-        if (voiceStateRef.current === 'LISTENING') {
-          setVoiceState('IDLE');
-        }
-      };
-
       recognition.onerror = (e: any) => {
-        if (e.error === 'no-speech') {
-          // ignore no-speech errors, it will restart on end
-        } else {
-          console.warn('Speech recognition event:', e.error);
-        }
-      };
-
-      recognition.onend = () => {
-        if (isListeningRef.current) {
-          try {
-            recognition.start();
-          } catch {}
-        }
+        console.warn('Speech recognition event:', e.error);
       };
 
       recognitionRef.current = recognition;
     }
-  }, [triggerInterruption, sendSpeechTranscript]);
+  }, [triggerInterruption, sendSpeechTranscript, language]);
 
   const toggleListening = useCallback(() => {
     getAudioContext();
@@ -469,10 +561,10 @@ export function useVoiceAgent() {
       try {
         recognitionRef.current?.start();
         setIsListening(true);
-        setVoiceState('IDLE');
+        setVoiceState('LISTENING');
       } catch {
         setIsListening(true);
-        setVoiceState('IDLE');
+        setVoiceState('LISTENING');
       }
     } else {
       try {
@@ -508,10 +600,48 @@ export function useVoiceAgent() {
     reconnectAttemptsRef.current = 0;
     if (socketRef.current) {
       try {
-        socketRef.current.close();
+        socketRef.current.close(1000, 'Manual reconnect');
       } catch {}
     }
+    setReconnectTrigger((prev) => prev + 1);
   }, []);
+
+  const updateBudget = useCallback((budget: number | null) => {
+    safeSend({
+      type: 'update_budget',
+      budget: budget
+    });
+    // Optimistically update local constraints
+    setConstraints((c) => ({ ...c, budget }));
+  }, [safeSend]);
+
+  // Set language and sync with backend + restart speech recognition
+  const setLanguage = useCallback((lang: string) => {
+    setLanguageState(lang);
+    languageRef.current = lang;
+    safeSend({ type: 'set_language', language: lang });
+
+    // Cancel any ongoing browser TTS when switching language
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+
+    // Restart speech recognition with new language if currently listening
+    if (isListening && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+      setTimeout(() => {
+        try {
+          const langMap: Record<string, string> = { en: 'en-IN', hi: 'hi-IN', mr: 'mr-IN' };
+          recognitionRef.current.lang = langMap[lang] || 'en-IN';
+          recognitionRef.current.start();
+        } catch (err) {
+          console.warn('Failed to restart speech recognition with new language:', err);
+        }
+      }, 200);
+    }
+  }, [safeSend, isListening]);
 
   return {
     sessionId,
@@ -522,6 +652,7 @@ export function useVoiceAgent() {
     liveTranscript,
     timelineEvents,
     demoMode,
+    language,
     constraints,
     flights,
     metrics,
@@ -533,7 +664,8 @@ export function useVoiceAgent() {
     sendSpeechTranscript,
     selectFlight,
     bookFlight,
+    updateBudget,
+    setLanguage,
     reconnect,
   };
 }
-

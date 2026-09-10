@@ -6,9 +6,21 @@ import { Footer } from '@/components/Footer';
 import { Timeline } from '@/components/Timeline';
 import { VoiceEngineeringPanel } from '@/components/VoiceEngineeringPanel';
 import { useVoiceAgent } from '@/hooks/useVoiceAgent';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import { Cpu, Activity, Radio, Volume2, ShieldCheck, Zap, RefreshCw } from 'lucide-react';
+import { getApiBaseUrl } from '@/lib/api';
 
 export default function VoiceLabPage() {
+  const router = useRouter();
+  const { isGuest, isAuthenticated, isLoading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated && !isGuest) {
+      router.push('/login');
+    }
+  }, [authLoading, isAuthenticated, isGuest, router]);
+
   const {
     sessionId,
     connectionStatus,
@@ -25,7 +37,8 @@ export default function VoiceLabPage() {
 
   const fetchLiveMetrics = async () => {
     try {
-      const res = await fetch('https://rime-voicebook-backend.onrender.com/api/metrics');
+      const apiUrl = getApiBaseUrl();
+      const res = await fetch(`${apiUrl}/api/metrics`);
       if (res.ok) {
         const data = await res.json();
         setRawMetrics(data);
@@ -38,6 +51,17 @@ export default function VoiceLabPage() {
     const interval = setInterval(fetchLiveMetrics, 2000);
     return () => clearInterval(interval);
   }, []);
+
+  if (authLoading || (!isAuthenticated && !isGuest)) {
+    return (
+      <div className="min-h-screen bg-[#070b14] flex items-center justify-center text-slate-400 text-xs">
+        <div className="space-y-3 text-center">
+          <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p>Verifying VoiceBook session...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-[#070b14] text-slate-100 selection:bg-violet-600">
@@ -84,10 +108,10 @@ export default function VoiceLabPage() {
 
           <div className="p-4 rounded-2xl bg-slate-900/50 border border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-mono uppercase text-slate-400">Deepgram STT</span>
+              <span className="text-xs font-mono uppercase text-slate-400">Web Speech STT</span>
               <span className="w-2 h-2 rounded-full bg-cyan-400" />
             </div>
-            <div className="text-base font-bold text-white">Nova-2 / Web Speech</div>
+            <div className="text-base font-bold text-white">Browser Native</div>
             <p className="text-[11px] text-slate-400">Streaming acoustic recognition with interim barge-in.</p>
           </div>
 

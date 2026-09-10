@@ -41,6 +41,7 @@ class BookingConstraints(BaseModel):
     budget: Optional[float] = None
     passengers: int = Field(default=1, ge=1)
     selected_flight: Optional[Dict[str, Any]] = None
+    booking_id: Optional[str] = None
 
     def merge_update(self, new_constraints: Dict[str, Any]) -> "BookingConstraints":
         """
