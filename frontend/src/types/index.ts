@@ -44,7 +44,7 @@ export interface ConversationMessage {
   timestamp: string;
   generation: number;
   interrupted?: boolean;
-  ttsProvider?: 'rime' | 'browser';
+  ttsProvider?: 'rime' | 'rime_fallback' | 'browser';
   language?: string;
 }
 
@@ -57,7 +57,7 @@ export interface VoiceMetrics {
 }
 
 export interface ServiceStatus {
-  rime: 'CONNECTED' | 'ERROR' | 'MOCK_READY';
+  rime: 'CONNECTED' | 'FALLBACK' | 'ERROR' | 'MOCK_READY';
   gemini: 'CONNECTED' | 'ERROR' | 'RULE_BASED_READY';
   deepgram: 'CONNECTED' | 'ERROR' | 'BROWSER_STT_READY';
   livekit: 'CONNECTED' | 'ERROR' | 'DEV_LOCAL' | 'CONFIGURED';
@@ -90,4 +90,3 @@ export interface BookingRecord {
   duration?: string;
   price?: number;
 }
-

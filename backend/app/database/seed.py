@@ -18,6 +18,12 @@ ROUTES = [
     ("Mumbai", "Delhi", "21:30", "23:40", "2h 10m", 3799, 0, "QP-1108", "Akasa Air"),
     ("Mumbai", "Delhi", "13:00", "17:45", "4h 45m", 3299, 1, "SG-152", "SpiceJet"),
 
+    # The core demo route must be present in the searchable inventory.
+    ("Pune", "Mumbai", "07:10", "08:20", "1h 10m", 2950, 0, "6E-317", "IndiGo"),
+    ("Pune", "Mumbai", "11:45", "12:55", "1h 10m", 3250, 0, "AI-638", "Air India"),
+    ("Pune", "Mumbai", "16:30", "17:40", "1h 10m", 2799, 0, "QP-118", "Akasa Air"),
+    ("Pune", "Mumbai", "20:15", "21:25", "1h 10m", 3100, 0, "UK-904", "Vistara"),
+
     ("Pune", "Bangalore", "06:40", "08:05", "1h 25m", 3800, 0, "6E-451", "IndiGo"),
     ("Pune", "Bangalore", "14:20", "15:50", "1h 30m", 4200, 0, "AI-512", "Air India"),
     ("Pune", "Bangalore", "18:10", "19:35", "1h 25m", 4700, 0, "UK-823", "Vistara"),

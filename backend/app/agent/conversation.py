@@ -195,6 +195,8 @@ class ConversationManager:
 
         # Extract detected language from LLM response
         response_language = llm_response.get("language", self.language)
+        if response_language in {"en", "hi", "mr"}:
+            self.language = response_language
         logger.info(f"[Gen {gen}] Detected language: {response_language}")
 
         await self.emit_event("state_updated", {
@@ -214,13 +216,15 @@ class ConversationManager:
         elif action == "cancel":
             await self._execute_cancel_flow(gen, speech_text, response_language)
         else:
-            self.active_tts_task = asyncio.create_task(self._speak_response(gen, speech_text, response_language))
+            tts_task = asyncio.create_task(self._speak_response(gen, speech_text, response_language))
+            self.active_tts_task = tts_task
             try:
-                await self.active_tts_task
+                await tts_task
             except asyncio.CancelledError:
                 pass
             finally:
-                self.active_tts_task = None
+                if self.active_tts_task is tts_task:
+                    self.active_tts_task = None
 
     async def _execute_search_flow(self, generation: int, search_announcement: str, language: str = "en"):
         """
@@ -308,13 +312,15 @@ class ConversationManager:
             else:
                 summary_speech = f"I couldn't find any flights from {self.constraints.origin} to {self.constraints.destination}{b_text}. Would you preset your budget or route?"
 
-        self.active_tts_task = asyncio.create_task(self._speak_response(generation, summary_speech, language))
+        tts_task = asyncio.create_task(self._speak_response(generation, summary_speech, language))
+        self.active_tts_task = tts_task
         try:
-            await self.active_tts_task
+            await tts_task
         except asyncio.CancelledError:
             pass
         finally:
-            self.active_tts_task = None
+            if self.active_tts_task is tts_task:
+                self.active_tts_task = None
 
     async def _execute_booking_flow(self, generation: int, selected_id: Optional[int], speech_text: str, language: str = "en"):
         flight_id = selected_id
@@ -355,13 +361,15 @@ class ConversationManager:
                 "booking": booking_res["booking"],
                 "flight": booking_res["flight"]
             })
-            self.active_tts_task = asyncio.create_task(self._speak_response(generation, confirm_speech, language))
+            tts_task = asyncio.create_task(self._speak_response(generation, confirm_speech, language))
+            self.active_tts_task = tts_task
             try:
-                await self.active_tts_task
+                await tts_task
             except asyncio.CancelledError:
                 pass
             finally:
-                self.active_tts_task = None
+                if self.active_tts_task is tts_task:
+                    self.active_tts_task = None
         else:
             if language == "hi":
                 fail_speech = f"क्षमा करें, बुकिंग विफल: {booking_res.get('error')}"
@@ -370,13 +378,15 @@ class ConversationManager:
             else:
                 fail_speech = f"Sorry, booking failed: {booking_res.get('error')}"
 
-            self.active_tts_task = asyncio.create_task(self._speak_response(generation, fail_speech, language))
+            tts_task = asyncio.create_task(self._speak_response(generation, fail_speech, language))
+            self.active_tts_task = tts_task
             try:
-                await self.active_tts_task
+                await tts_task
             except asyncio.CancelledError:
                 pass
             finally:
-                self.active_tts_task = None
+                if self.active_tts_task is tts_task:
+                    self.active_tts_task = None
 
     async def _execute_cancel_flow(self, generation: int, speech_text: str, language: str = "en"):
         if hasattr(self.constraints, "booking_id") and self.constraints.booking_id:
@@ -394,13 +404,15 @@ class ConversationManager:
         else:
             cancel_speech = "Your flight booking request has been cleared. Where would you like to travel?"
 
-        self.active_tts_task = asyncio.create_task(self._speak_response(generation, cancel_speech, language))
+        tts_task = asyncio.create_task(self._speak_response(generation, cancel_speech, language))
+        self.active_tts_task = tts_task
         try:
-            await self.active_tts_task
+            await tts_task
         except asyncio.CancelledError:
             pass
         finally:
-            self.active_tts_task = None
+            if self.active_tts_task is tts_task:
+                self.active_tts_task = None
 
     async def _speak_response(self, generation: int, text: str, language: str = "en"):
         """
@@ -421,18 +433,14 @@ class ConversationManager:
         abort_event = asyncio.Event()
         self.current_tts_abort_event = abort_event
 
-        await self.emit_timeline_event("rime_start", {"generation": generation, "text": text[:60], "language": language, "tts_provider": tts_provider})
-        await self.emit_event("agent_speech_start", {
-            "text": text,
-            "generation": generation,
-            "language": language,
-            "tts_provider": tts_provider
-        })
-
         if tts_provider == "browser":
             # For browser TTS (Marathi), we don't stream audio chunks.
             # The frontend will use window.speechSynthesis to speak the text.
             logger.info(f"[Gen {generation}] Using browser TTS for language '{language}'. Text: '{text[:60]}...'")
+            await self.emit_timeline_event("tts_start", {"generation": generation, "text": text[:60], "language": language, "tts_provider": "browser"})
+            await self.emit_event("agent_speech_start", {
+                "text": text, "generation": generation, "language": language, "tts_provider": "browser"
+            })
             # Small delay to simulate processing time
             await asyncio.sleep(0.1)
             # Emit speech end immediately — browser handles actual audio playback
@@ -448,18 +456,29 @@ class ConversationManager:
 
         # Rime TTS streaming path
         is_first_chunk = True
+        speech_start_emitted = False
+        actual_tts_provider = tts_provider  # May be downgraded to "rime_fallback" if API fails
         try:
             async for chunk in rime_service.stream_speech(text, generation, abort_event, language=language):
-                # Check provider status to see if it fell back mid-stream
-                if not rime_service.is_healthy():
-                    await self.emit_event("services_updated", {"services": {"rime": "FALLBACK"}})
-                    
                 # Critical check before dispatching every audio chunk:
                 if not self.generation_manager.is_generation_authoritative(generation) or abort_event.is_set():
                     logger.warning(f"[Gen {generation}] Rime audio chunk suppressed: stale generation {generation} vs {self.generation_manager.current_generation}")
                     break
 
                 if is_first_chunk:
+                    # The stream has now either connected to Rime or explicitly
+                    # entered its local fallback.  Announce the actual provider,
+                    # never an optimistic "rime" label.
+                    actual_tts_provider = "rime_fallback" if rime_service.last_call_used_fallback else "rime"
+                    await self.emit_timeline_event("tts_start", {
+                        "generation": generation, "text": text[:60], "language": language,
+                        "tts_provider": actual_tts_provider,
+                    })
+                    await self.emit_event("agent_speech_start", {
+                        "text": text, "generation": generation, "language": language,
+                        "tts_provider": actual_tts_provider,
+                    })
+                    speech_start_emitted = True
                     metrics_collector.record_first_audio(generation)
                     await self.emit_timeline_event("rime_first_audio", {"generation": generation})
                     is_first_chunk = False
@@ -470,12 +489,18 @@ class ConversationManager:
         except asyncio.CancelledError:
             logger.info(f"[Gen {generation}] TTS stream cancelled.")
         finally:
+            # Check if Rime silently fell back to local synthesis
+            if rime_service.last_call_used_fallback:
+                actual_tts_provider = "rime_fallback"
+                logger.warning(f"[Gen {generation}] Rime API fell back to local synthesis — emitting corrective status.")
+                await self.emit_event("services_updated", {"services": {"rime": "FALLBACK"}})
+
             if self.generation_manager.is_generation_authoritative(generation):
                 self.state_machine.transition_to(VoiceState.COMPLETED, "tts_done")
-                await self.emit_timeline_event("speech_end", {"generation": generation, "tts_provider": "rime"})
+                await self.emit_timeline_event("speech_end", {"generation": generation, "tts_provider": actual_tts_provider})
                 await self.emit_event("agent_speech_end", {
                     "generation": generation,
-                    "tts_provider": "rime",
+                    "tts_provider": actual_tts_provider,
                     "metrics": metrics_collector.snapshot()
                 })
             else:

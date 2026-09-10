@@ -120,14 +120,22 @@ class GeminiService:
                 parsed = self._extract_json(raw_text)
                 if parsed:
                     # Ensure language field is present
-                    if "language" not in parsed:
-                        parsed["language"] = language_hint or detect_language(transcript)
-                    return parsed
+                    detected = detect_language(transcript)
+                    if detected != "en":
+                        # Script is stronger evidence than a stale UI preference.
+                        parsed["language"] = detected
+                    elif "language" not in parsed:
+                        parsed["language"] = language_hint or detected
+                    # Gemini remains the intent engine, but explicit route wording is
+                    # authoritative input.  Do not let an occasional malformed or
+                    # reversed JSON extraction overwrite what the customer said.
+                    return self._ground_llm_response(parsed, transcript, current_state)
             except Exception as e:
                 logger.error(f"Gemini API invocation failed: {e}. Falling back to rule-based extractor.")
 
         # Deterministic conversational fallback parser
-        return self._rule_based_fallback(transcript, current_state, flights_context, language_hint)
+        fallback = self._rule_based_fallback(transcript, current_state, flights_context, language_hint)
+        return self._ground_llm_response(fallback, transcript, current_state)
 
     def _extract_json(self, text: str) -> Optional[Dict[str, Any]]:
         try:
@@ -138,6 +146,64 @@ class GeminiService:
             return json.loads(text.strip())
         except Exception:
             return None
+
+    def _explicit_route_constraints(self, transcript: str) -> Dict[str, str]:
+        """Extract only route facts explicitly present in the utterance.
+
+        This deliberately does not try to infer missing cities.  It is a guardrail
+        around Gemini output, not a replacement for Gemini's intent extraction.
+        """
+        aliases = {
+            "pune": "Pune", "पुणे": "Pune", "पुना": "Pune",
+            "mumbai": "Mumbai", "मुंबई": "Mumbai", "बंबई": "Mumbai",
+            "delhi": "Delhi", "दिल्ली": "Delhi", "नई दिल्ली": "Delhi",
+            "bangalore": "Bangalore", "bengaluru": "Bangalore", "बेंगलुरु": "Bangalore", "बंगलौर": "Bangalore", "बंगळुरू": "Bangalore",
+        }
+        lower = transcript.lower()
+        mentions = []
+        for alias, city in aliases.items():
+            start = 0
+            while True:
+                index = lower.find(alias.lower(), start)
+                if index < 0:
+                    break
+                mentions.append((index, city))
+                start = index + len(alias)
+        mentions.sort(key=lambda item: item[0])
+        cities = []
+        for _, city in mentions:
+            if not cities or cities[-1] != city:
+                cities.append(city)
+
+        if len(cities) >= 2:
+            # Indian flight requests conventionally state source before destination;
+            # this also covers Hindi "X से Y" and Marathi "X ते Y".
+            return {"origin": cities[0], "destination": cities[1]}
+
+        if len(cities) == 1:
+            city = cities[0]
+            pos = mentions[0][0]
+            before = lower[:pos]
+            if re.search(r"(?:from|से|हून|पासून)\s*$", before):
+                return {"origin": city}
+            if re.search(r"(?:to|तक|को|ते)\s*$", before):
+                return {"destination": city}
+        return {}
+
+    def _ground_llm_response(self, parsed: Dict[str, Any], transcript: str, current_state: Dict[str, Any]) -> Dict[str, Any]:
+        grounded = self._explicit_route_constraints(transcript)
+        if not grounded:
+            return parsed
+        constraints = parsed.get("constraints")
+        if not isinstance(constraints, dict):
+            constraints = {}
+            parsed["constraints"] = constraints
+        constraints.update(grounded)
+        # A newly stated complete route is a search request, including wording such
+        # as "book a flight from ..."; there is no selected flight to book yet.
+        if grounded.get("origin") and grounded.get("destination"):
+            parsed["action"] = "search"
+        return parsed
 
     def _rule_based_fallback(
         self,
@@ -152,7 +218,11 @@ class GeminiService:
         Now with multilingual support for Hindi and Marathi.
         """
         # Detect language
-        detected_lang = language_hint or detect_language(transcript)
+        detected_lang = detect_language(transcript)
+        # Retain an explicit non-English UI preference for romanized utterances,
+        # while never overriding actual Hindi/Marathi script with stale context.
+        if detected_lang == "en" and language_hint in {"hi", "mr"}:
+            detected_lang = language_hint
         t = transcript.lower()
         extracted_constraints = {}
         action = "chat"

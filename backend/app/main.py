@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import uuid
+from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,10 +32,23 @@ from app.agent.state import VoiceState
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("voicebook.main")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Initializing VoiceBook SQLite database...")
+    seed_database()
+    logger.info("VoiceBook backend initialized successfully.")
+    yield
+    # Shutdown: clean up persistent HTTP sessions
+    logger.info("Shutting down — closing Rime TTS session...")
+    await rime_service.close()
+
+
 app = FastAPI(
     title="VoiceBook API",
     description="Interruptible Low-Latency AI Flight Booking Voice Agent",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 cors_origins_raw = os.getenv("CORS_ORIGINS", "").strip()
@@ -63,13 +77,6 @@ else:
 
 # Active conversation managers by session_id
 active_sessions: Dict[str, ConversationManager] = {}
-
-
-@app.on_event("startup")
-async def on_startup():
-    logger.info("Initializing VoiceBook SQLite database...")
-    seed_database()
-    logger.info("VoiceBook backend initialized successfully.")
 
 
 @app.get("/health")

@@ -42,36 +42,64 @@ async def test_rime_audio_format_validity():
 @pytest.mark.asyncio
 async def test_rime_payload_contains_language():
     """
-    Test that the actual Rime HTTP request payload includes the 'lang' parameter from configuration.
+    Test that the actual Rime HTTP request payload includes 'lang' and 'audioFormat' parameters.
     """
-    from unittest.mock import patch, AsyncMock
-    import json
+    from unittest.mock import AsyncMock, MagicMock
     
+    # Save original values
+    orig_api_key = rime_service.api_key
+    orig_has_key = rime_service._has_api_key
+    orig_last_ok = rime_service._last_api_ok
+    orig_get_session = rime_service._get_session
+
     # Force the service to appear healthy so it tries to hit the API
-    rime_service.is_connected = True
-    rime_service.provider_status = "CONNECTED"
     rime_service.api_key = "dummy_key_for_test"
+    rime_service._has_api_key = True
+    rime_service._last_api_ok = True
     
-    with patch('aiohttp.ClientSession.post') as mock_post:
-        # Mock the context manager and response
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.content.read.side_effect = [b'\x00\x00', b''] # one valid chunk then EOF
-        
-        mock_post.return_value.__aenter__.return_value = mock_response
+    captured_payload = {}
+
+    # Build mock response that behaves like aiohttp.ClientResponse
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_content = AsyncMock()
+    mock_content.read = AsyncMock(side_effect=[b'\x00\x00', b''])
+    mock_response.content = mock_content
+
+    # session.post(...) must return an async context manager (not a coroutine)
+    post_cm = MagicMock()
+    post_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    post_cm.__aexit__ = AsyncMock(return_value=False)
+
+    def mock_post_fn(url, json=None, headers=None):
+        captured_payload.update(json or {})
+        return post_cm
+
+    # Build mock session
+    mock_session = MagicMock()
+    mock_session.post = mock_post_fn
+    mock_session.closed = False
+
+    # Mock _get_session to return our mock session directly
+    async def mock_get_session():
+        return mock_session
+
+    try:
+        rime_service._get_session = mock_get_session
         
         # Stream some text
         async for _ in rime_service.stream_speech("Hello", 1):
             pass
             
         # Verify the post was called with correct payload
-        assert mock_post.called, "Rime API post was not called"
-        
-        # Extract the json kwargs passed to post
-        call_kwargs = mock_post.call_args.kwargs
-        payload = call_kwargs.get("json", {})
-        
-        assert "lang" in payload, "'lang' field is missing from Rime request payload"
-        assert payload["lang"] == rime_service.language, f"Payload language '{payload['lang']}' doesn't match configured '{rime_service.language}'"
-        assert payload["audioFormat"] == "pcm", "audioFormat must be pcm"
-
+        assert "lang" in captured_payload, "'lang' field is missing from Rime request payload"
+        assert captured_payload["lang"] == "en", f"Payload language '{captured_payload['lang']}' doesn't match expected 'en'"
+        assert captured_payload["audioFormat"] == "pcm", "audioFormat must be pcm"
+        assert captured_payload["samplingRate"] == 24000, "samplingRate must be 24000"
+        assert captured_payload["speaker"] == "marsh", f"speaker should be 'marsh', got '{captured_payload['speaker']}'"
+    finally:
+        # Restore original values
+        rime_service.api_key = orig_api_key
+        rime_service._has_api_key = orig_has_key
+        rime_service._last_api_ok = orig_last_ok
+        rime_service._get_session = orig_get_session

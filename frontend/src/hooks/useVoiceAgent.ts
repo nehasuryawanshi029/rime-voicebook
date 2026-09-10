@@ -56,7 +56,6 @@ export function useVoiceAgent() {
   const reconnectTimerRef = useRef<any>(null);
   const reconnectAttemptsRef = useRef<number>(0);
   const languageRef = useRef<string>('en');
-  const isListeningRef = useRef<boolean>(false);
 
   // Keep refs synchronized
   useEffect(() => {
@@ -112,14 +111,6 @@ export function useVoiceAgent() {
 
       try {
         const ctx = getAudioContext();
-        if (ctx.state === 'suspended') {
-          try {
-            await ctx.resume();
-          } catch (resumeErr) {
-            console.warn('AudioContext resume warning:', resumeErr);
-          }
-        }
-
         const binaryString = window.atob(base64Audio);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
@@ -285,7 +276,7 @@ export function useVoiceAgent() {
                   content: msg.data.text,
                   timestamp: new Date().toLocaleTimeString(),
                   generation: msg.generation,
-                  ttsProvider: ttsProvider as 'rime' | 'browser',
+                  ttsProvider: ttsProvider as 'rime' | 'rime_fallback' | 'browser',
                   language: speechLang,
                 },
               ]);
@@ -500,9 +491,6 @@ export function useVoiceAgent() {
     (text: string) => {
       if (!text.trim()) return;
 
-      // Unlock AudioContext immediately during user interaction
-      getAudioContext();
-
       // If AI is currently speaking or searching, barge in immediately
       if (voiceStateRef.current === 'SPEAKING' || voiceStateRef.current === 'SEARCHING') {
         triggerInterruption('user_voice_barge_in');
@@ -513,7 +501,7 @@ export function useVoiceAgent() {
         transcript: text.trim(),
       });
     },
-    [triggerInterruption, safeSend, getAudioContext]
+    [triggerInterruption, safeSend]
   );
 
   // Initialize Browser Web Speech API for voice input
@@ -561,27 +549,23 @@ export function useVoiceAgent() {
 
       recognition.onerror = (e: any) => {
         console.warn('Speech recognition event:', e.error);
-        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-          isListeningRef.current = false;
-          setIsListening(false);
-          setVoiceState('IDLE');
-        }
       };
 
+      // Auto-restart speech recognition if the browser stops it
+      // (e.g., silence timeout). Without this, isListening stays true
+      // while the mic is actually dead — a silent failure.
       recognition.onend = () => {
-        // In Chrome, SpeechRecognition automatically stops on silence or speech pause.
-        // If the user hasn't explicitly clicked mic to stop, restart recognition automatically:
-        if (isListeningRef.current) {
+        // Only auto-restart if the user hasn't explicitly toggled off
+        if (isListening) {
           try {
+            const langMap: Record<string, string> = { en: 'en-IN', hi: 'hi-IN', mr: 'mr-IN' };
+            recognition.lang = langMap[languageRef.current] || 'en-IN';
             recognition.start();
-          } catch {
-            setTimeout(() => {
-              if (isListeningRef.current) {
-                try {
-                  recognition.start();
-                } catch {}
-              }
-            }, 300);
+          } catch (err) {
+            // start() throws if recognition is already started or aborted
+            console.warn('Failed to auto-restart speech recognition:', err);
+            setIsListening(false);
+            setVoiceState('IDLE');
           }
         }
       };
@@ -592,24 +576,23 @@ export function useVoiceAgent() {
 
   const toggleListening = useCallback(() => {
     getAudioContext();
-    if (!isListeningRef.current) {
-      isListeningRef.current = true;
-      setIsListening(true);
-      setVoiceState('LISTENING');
+    if (!isListening) {
       try {
         recognitionRef.current?.start();
-      } catch (err) {
-        console.warn('Speech recognition start error:', err);
+        setIsListening(true);
+        setVoiceState('LISTENING');
+      } catch {
+        setIsListening(true);
+        setVoiceState('LISTENING');
       }
     } else {
-      isListeningRef.current = false;
-      setIsListening(false);
-      setVoiceState('IDLE');
       try {
         recognitionRef.current?.stop();
       } catch {}
+      setIsListening(false);
+      setVoiceState('IDLE');
     }
-  }, [getAudioContext]);
+  }, [isListening, getAudioContext]);
 
   const selectFlight = useCallback(
     (flight: Flight) => {
