@@ -95,3 +95,11 @@ Measured via live backend telemetry (`backend/app/services/metrics.py` and `/api
 | **Interruption Stop Latency** | `ms` | Time elapsed from barge-in trigger until audio track abort and buffer disconnect (< 20ms). |
 | **Stale Results Discarded** | `count` | Total obsolete tool results intercepted and prevented from updating state. |
 | **Stale Results Spoken** | **`0`** | Must always remain strictly zero under generation fencing. |
+
+## Limitations
+
+- Speech quality can vary depending on the selected speaker, language, and input text.
+- Very long or complex inputs may result in increased generation latency.
+- Network connectivity is required because speech generation depends on the Rime API.
+- Temporary API/network failures can prevent audio generation or cause delayed responses.
+- Pronunciation of uncommon names, technical terms, abbreviations, or mixed-language text may not always be perfect.
